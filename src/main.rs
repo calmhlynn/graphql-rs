@@ -6,53 +6,65 @@ use axum::{
     routing::get,
     Router,
 };
+use std::net::SocketAddr;
 use tokio::net::TcpListener;
 
-#[derive(SimpleObject)]
-struct MyObject {
-    a: i32,
-    b: i32,
-    c: i32,
-}
-
 struct User {
-    a: i32,
-    b: i32,
-    c: i32,
+    id: ID,
+    name: String,
+}
+#[Object]
+impl User {
+    async fn id(&self) -> &ID {
+        &self.id
+    }
+
+    async fn name(&self) -> &String {
+        &self.name
+    }
 }
 
 struct Query;
+
 #[Object]
 impl Query {
-    async fn user(&self, a: i32) -> Result<Option<MyObject>> {
-        Ok(Some(MyObject { a, b: 10, c: 20 }))
+    async fn user(&self, ctx: &Context<'_>, id: ID) -> User {
+        ctx.data::<String>().unwrap();
+        User {
+            id,
+            name: "John Doe".to_string(),
+        }
     }
+}
 
-    async fn context<'ctx>(&self, ctx: &Context<'ctx>) -> Result<&'ctx String> {
-        ctx.data::<String>()
-    }
+struct Mutation;
 
-    async fn test(&self) -> Result<String> {
-        Ok("Hello, World!".to_string())
+#[Object]
+impl Mutation {
+    async fn mut_user(&self, id: ID) -> User {
+        User {
+            id,
+            name: "John Doe".to_string(),
+        }
     }
+}
+
+#[tokio::main]
+async fn main() {
+    let schema = Schema::build(Query, Mutation, EmptySubscription)
+        .data("Hello World!".to_string())
+        .finish();
+
+    let app = Router::new().route("/graphql", get(graphiql).post_service(GraphQL::new(schema)));
+
+    let addr = SocketAddr::from(([127, 0, 0, 1], 8000));
+    println!("Server running at http://{}", addr);
+    axum::serve(TcpListener::bind(addr).await.unwrap(), app)
+        .await
+        .unwrap();
 }
 
 async fn graphiql() -> impl IntoResponse {
     response::Html(GraphiQLSource::build().endpoint("/").finish())
 }
 
-#[tokio::main]
-async fn main() {
-    let schema = Schema::build(Query, EmptyMutation, EmptySubscription)
-        .data("Context data".to_string())
-        .finish();
-
-    println!("{}", &schema.sdl());
-    let app = Router::new().route("/", get(graphiql).post_service(GraphQL::new(schema)));
-
-    println!("Playground: http://localhost:8000");
-
-    axum::serve(TcpListener::bind("127.0.0.1:8000").await.unwrap(), app)
-        .await
-        .unwrap();
-}
